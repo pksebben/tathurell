@@ -45,9 +45,18 @@ class App:
         self.path_label: tk.Label = tk.Label(root, text="")
         self.path_label.pack()
 
+        # Label to display messages
+        self.message_label: tk.Label = tk.Label(root, text="")
+        self.message_label.pack()
+
         # select preconfigured file path if set
         if config["save_path"]:
-            self.select_path(config["save_path"])
+            self.path_label.config(text=f"Selected Path: {config['save_path']}")
+        else:
+            self.update_message("Please select a path to save to.")
+
+        # Bind <Configure> event to the root window
+        self.root.bind("<Configure>", self.update_wraplength)
 
         self.stop_event = Event()
 
@@ -56,22 +65,25 @@ class App:
         Toggle the recording state. Changes the text on the recording button and prints the current recording state
         and the entered file name. Replace the print statements with your start/stop recording logic.
         """
+        file_path = os.path.join(
+            config["save_path"],
+            f"{self.filename.get()}_{parse_timestamp(str( datetime.datetime.utcnow() )).strftime('%Y%m%d_%H%M%S')}.mp3",
+        )
+
         if self.is_recording:
             # stop recording
             self.button.config(text="Start Recording")
             self.filename.config(state="normal")
             self.is_recording = False
             self.stop_event.set()
+            self.update_message(f"Recorded audio to {file_path}")
 
         else:
             # start recording
             self.button.config(text="Stop Recording")
+            self.update_message("RECORDING")
             self.is_recording = True
             self.filename.config(state="disabled")
-            file_path = os.path.join(
-                config["save_path"],
-                f"{self.filename.get()}_{parse_timestamp(str( datetime.datetime.utcnow() )).strftime('%Y%m%d_%H%M%S')}.mp3",
-            )
             self.stop_event.clear()
             Thread(
                 target=record,
@@ -90,6 +102,20 @@ class App:
         """
         config["save_path"] = filedialog.askdirectory()
         self.path_label.config(text=f"Selected Path: {config['save_path']}")
+
+    # Method to update message label text
+    def update_message(self, message: str) -> None:
+        """
+        Update the text displayed in the message label.
+
+        Args:
+        message: The new text to display in the message label.
+        """
+        self.message_label.config(text=message)
+
+    def update_wraplength(self, event):
+        # Set wraplength to the current width of the root window
+        self.message_label.config(wraplength=self.root.winfo_width())
 
 
 if __name__ == "__main__":
