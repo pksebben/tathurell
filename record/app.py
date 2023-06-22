@@ -1,9 +1,16 @@
+#!/usr/bin/env python3
+import os
 import tkinter as tk
 from typing import Callable, Tuple, Any
 from tkinter import filedialog
 from threading import Thread, Event
+import datetime
 
 from record import record
+from utils import parse_timestamp
+from config import Config
+
+config = Config("config.json")
 
 
 class App:
@@ -24,9 +31,9 @@ class App:
         self.button.pack()
 
         # Create entry for file name
-        self.entry: tk.Entry = tk.Entry(root)
-        self.entry.pack()
-        self.entry.insert(0, "default_name")
+        self.filename: tk.Entry = tk.Entry(root)
+        self.filename.pack()
+        self.filename.insert(0, "default_name")
 
         # Create button to select file path
         self.path_button: tk.Button = tk.Button(
@@ -38,6 +45,10 @@ class App:
         self.path_label: tk.Label = tk.Label(root, text="")
         self.path_label.pack()
 
+        # select preconfigured file path if set
+        if config["save_path"]:
+            self.select_path(config["save_path"])
+
         self.stop_event = Event()
 
     def toggle_recording(self) -> None:
@@ -46,25 +57,39 @@ class App:
         and the entered file name. Replace the print statements with your start/stop recording logic.
         """
         if self.is_recording:
+            # stop recording
             self.button.config(text="Start Recording")
+            self.filename.config(state="normal")
             self.is_recording = False
             self.stop_event.set()
 
         else:
+            # start recording
             self.button.config(text="Stop Recording")
             self.is_recording = True
+            self.filename.config(state="disabled")
+            file_path = os.path.join(
+                config["save_path"],
+                f"{self.filename.get()}_{parse_timestamp(str( datetime.datetime.utcnow() )).strftime('%Y%m%d_%H%M%S')}.mp3",
+            )
             self.stop_event.clear()
-            Thread(target=record, args=(self.stop_event,)).start()
+            Thread(
+                target=record,
+                args=(
+                    self.stop_event,
+                    file_path,
+                ),
+            ).start()
 
         print(f"Recording: {self.is_recording}")
-        print(f"File Name: {self.entry.get()}")
+        print(f"File Name: {self.filename.get()}")
 
     def select_path(self) -> None:
         """
         Open a file dialog to select a directory and update the path label with the selected path.
         """
-        self.file_path: str = filedialog.askdirectory()
-        self.path_label.config(text=f"Selected Path: {self.file_path}")
+        config["save_path"] = filedialog.askdirectory()
+        self.path_label.config(text=f"Selected Path: {config['save_path']}")
 
 
 if __name__ == "__main__":

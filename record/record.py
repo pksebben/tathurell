@@ -9,6 +9,10 @@ from threading import Thread, Event
 import eyed3
 import time
 
+from config import Config
+
+config = Config("config.json")
+
 RATE = 44100
 
 
@@ -42,7 +46,7 @@ def record_audio(recorded_data: List[np.ndarray], stop_event: Event) -> None:
         print("Recording stopped.")
 
 
-def save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data):
+def save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data, savepath):
     start_timestamp = parse_timestamp(start_timestamp)
     end_timestamp = parse_timestamp(end_timestamp)
 
@@ -59,11 +63,11 @@ def save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data):
     )
 
     # Export the audio file without metadata
-    filename = f"audio_{start_timestamp.strftime('%Y%m%d_%H%M%S')}_to_{end_timestamp.strftime('%Y%m%d_%H%M%S')}.mp3"
-    audio.export(filename, format="mp3")
+    # filename = f"{filename}_{start_timestamp.strftime('%Y%m%d_%H%M%S')}.mp3"
+    audio.export(savepath, format="mp3")
 
     # Set the metadata using eyed3
-    mp3file = eyed3.load(filename)
+    mp3file = eyed3.load(savepath)
     if mp3file.tag is None:
         mp3file.initTag()
 
@@ -72,10 +76,10 @@ def save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data):
     )
     mp3file.tag.save()
 
-    print(f"Audio saved as {filename}")
+    print(f"Audio saved to {savepath}")
 
 
-def record(stop_event: Event) -> None:
+def record(stop_event: Event, savepath: str) -> None:
     """
     Start recording audio data until the stop_event is set. Then, save the recorded data with start
     and end timestamps.
@@ -102,7 +106,7 @@ def record(stop_event: Event) -> None:
     end_timestamp: str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     # Save the recorded data with the start and end timestamps
-    save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data)
+    save_audio_with_timestamps(start_timestamp, end_timestamp, recorded_data, savepath)
 
     print("Audio saved with start and end timestamps.")
 
