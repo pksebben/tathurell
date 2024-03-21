@@ -6,3 +6,5 @@ audio_*
 *.wav
 *.mp3
 *.m4a
+*.transcription
+*.transcription.txt

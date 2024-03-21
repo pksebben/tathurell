@@ -6,10 +6,9 @@ from pydub import AudioSegment
 import io
 import numpy as np
 
-from pyannote.audio import Pipeline
-
 audio_path = sys.argv[1]
 
+from pyannote.audio import Pipeline
 
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
@@ -90,13 +89,34 @@ res = json.loads(rec.FinalResult())
 
 current_speaker = None
 current_chunk = ""
+diarized_transcription = []
+
 for word in combined_transcription:
     if word["speaker"] != current_speaker:
         if current_speaker is not None:
-            print(f"{current_speaker}: {current_chunk}")
+            diarized_transcription.append(
+                {"speaker": current_speaker, "text": current_chunk}
+            )
         current_chunk = ""
         current_speaker = word["speaker"]
     else:
         current_chunk += f" {word['word']}"
 
-print(f"{current_speaker}: {current_chunk}")
+diarized_transcription.append({"speaker": current_speaker, "text": current_chunk})
+
+names = {}
+
+for chunk in diarized_transcription:
+    if chunk["speaker"] in names.keys():
+        pass
+    else:
+        print(f"Who said this?\n{chunk['text']}")
+        name = input("input name:")
+        names[chunk["speaker"]] = name
+
+compiled_transcription = [
+    f"{names[chunk['speaker']]}: {chunk['text']}" for chunk in diarized_transcription
+]
+
+with open(f"{audio_path}.transcription", "w") as f:
+    f.write("\n".join(compiled_transcription))
