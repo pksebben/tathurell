@@ -118,5 +118,5 @@ compiled_transcription = [
     f"{names[chunk['speaker']]}: {chunk['text']}" for chunk in diarized_transcription
 ]
 
-with open(f"{audio_path}.transcription", "w") as f:
+with open(f"{audio_path}.transcription.txt", "w") as f:
     f.write("\n".join(compiled_transcription))
