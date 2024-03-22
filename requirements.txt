@@ -3,3 +3,4 @@ vosk
 numpy
 pydub
 eyed3
+pyannote-audio
