@@ -19,7 +19,7 @@ pipeline = Pipeline.from_pretrained(
 import torch
 import torchaudio
 
-pipeline.to(torch.device("mps"))
+pipeline.to(torch.device("cuda"))
 
 # apply pretrained pipeline
 waveform, sample_rate = torchaudio.load(audio_path)
