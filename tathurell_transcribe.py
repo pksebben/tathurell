@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 from vosk import Model, KaldiRecognizer
 import json
@@ -10,9 +11,16 @@ audio_path = sys.argv[1]
 
 from pyannote.audio import Pipeline
 
+# pyannote's gated models require a Hugging Face token. Keep it out of source:
+# export HF_TOKEN=hf_... before running. (The previously hardcoded token was
+# leaked in git history and must be revoked on huggingface.co.)
+hf_token = os.environ.get("HF_TOKEN")
+if not hf_token:
+    sys.exit("HF_TOKEN environment variable is not set (needed for pyannote).")
+
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    use_auth_token="***REMOVED***",
+    use_auth_token=hf_token,
 )
 
 # send pipeline to GPU (when available)
