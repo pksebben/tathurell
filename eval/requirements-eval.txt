@@ -1,0 +1,16 @@
+vosk
+pydub
+numpy
+torch
+torchaudio
+pyannote.audio>=3.1
+pyannote.metrics
+whisperx
+mlx-whisper
+openai-whisper
+jiwer
+meeteval
+huggingface_hub
+datasets
+soundfile
+pytest
