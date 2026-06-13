@@ -59,12 +59,6 @@ buf.seek(0)
 
 wav_data = np.frombuffer(buf.read(), dtype=np.int16)
 
-# Chunk size in seconds
-chunk_duration = 4000 / 16000
-
-# Total duration of all processed chunks
-total_duration = 0
-
 combined_transcription = []
 
 # Process chunks of the audio data
@@ -74,23 +68,24 @@ for i in range(0, len(wav_data), 4000):
     if rec.AcceptWaveform(chunk.tobytes()):
         res = json.loads(rec.Result())
         print(f"RES: {res}")
-        # Adjust each word's timestamps
         if "result" in res:
             for word in res.get("result", []):
+                # vosk word timestamps are absolute (relative to the start of the
+                # whole stream — verified empirically, they do not reset per
+                # utterance), so they share a reference frame with pyannote's
+                # diarization turns. Attribute the word to the first turn that
+                # hasn't ended before the word starts. If the word falls past the
+                # last detected turn, fall back to that last speaker (otherwise
+                # `speaker` would carry over from the previous word, or be unbound
+                # on the very first word).
+                speaker = turnlist[-1]["speaker"] if turnlist else None
                 for turn in turnlist:
-                    if word["start"] > turn["end"]:
-                        pass
-                    else:
+                    if word["start"] <= turn["end"]:
                         speaker = turn["speaker"]
                         break
                 combined_transcription.append(
                     {"word": word["word"], "speaker": speaker}
                 )
-                word["start"] += total_duration
-                word["end"] += total_duration
-            print(res)
-    # Update total_duration
-    total_duration += chunk_duration
 
 # Get the final result without timestamps
 res = json.loads(rec.FinalResult())
@@ -101,16 +96,21 @@ diarized_transcription = []
 
 for word in combined_transcription:
     if word["speaker"] != current_speaker:
+        # Speaker changed: flush the previous run, then start the new run with
+        # the word that triggered the change. (Previously this reset the chunk
+        # to "" without keeping the word, dropping the first word of every run.)
         if current_speaker is not None:
             diarized_transcription.append(
                 {"speaker": current_speaker, "text": current_chunk}
             )
-        current_chunk = ""
         current_speaker = word["speaker"]
+        current_chunk = word["word"]
     else:
         current_chunk += f" {word['word']}"
 
-diarized_transcription.append({"speaker": current_speaker, "text": current_chunk})
+# Flush the final run (skip if there was no transcription at all).
+if current_speaker is not None:
+    diarized_transcription.append({"speaker": current_speaker, "text": current_chunk})
 
 names = {}
 
