@@ -35,7 +35,7 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 
 # Load the model
-model = Model("/Users/benmorsillo/code/JOAN/models/vosk-model-en-us-0.42-gigaspeech")
+model = Model("/Users/benmorsillo/code/ASSISTANTS/JOAN/models/vosk-model-en-us-0.42-gigaspeech")
 
 # Create a new recognizer with partial results config
 rec = KaldiRecognizer(model, 16000, '{"partial_results": True}')
