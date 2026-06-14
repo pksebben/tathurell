@@ -42,7 +42,16 @@ class VoskPyannote:
     def _asr(self, audio_path):
         rec = KaldiRecognizer(self._model, 16000)
         rec.SetWords(True)
-        audio = AudioSegment.from_file(audio_path).set_frame_rate(16000).set_channels(1)
+        # set_sample_width(2) forces 16-bit PCM. The corpus loaders emit float32
+        # WAVs; casting those samples straight to int16 truncates every value in
+        # [-1, 1] to 0 (silence), which makes vosk error or emit garbage. pydub's
+        # set_sample_width(2) does the proper float->int16 rescaling first.
+        audio = (
+            AudioSegment.from_file(audio_path)
+            .set_frame_rate(16000)
+            .set_channels(1)
+            .set_sample_width(2)
+        )
         # get_array_of_samples() returns the raw PCM samples without any header,
         # unlike np.frombuffer(wav_with_header) which would include the 44-byte WAV header.
         pcm = np.array(audio.get_array_of_samples(), dtype=np.int16)
