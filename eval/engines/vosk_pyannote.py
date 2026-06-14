@@ -30,10 +30,13 @@ class VoskPyannote:
 
     def _diarize(self, audio_path):
         waveform, sr = torchaudio.load(audio_path)
-        dia = self._dia({"waveform": waveform, "sample_rate": sr})
+        out = self._dia({"waveform": waveform, "sample_rate": sr})
+        # pyannote 4.x returns a DiarizeOutput whose Annotation is
+        # .speaker_diarization; pyannote 3.x returned the Annotation directly.
+        annotation = getattr(out, "speaker_diarization", out)
         return [
             {"speaker": spk, "start": turn.start, "end": turn.end}
-            for turn, _, spk in dia.itertracks(yield_label=True)
+            for turn, _, spk in annotation.itertracks(yield_label=True)
         ]
 
     def _asr(self, audio_path):
