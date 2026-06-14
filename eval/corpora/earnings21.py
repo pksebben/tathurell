@@ -25,8 +25,9 @@ Schema (HF dataset, confirmed by introspection 2026-06-13):
   audio, audio_length, original_sample_rate, company_name, financial_quarter,
   sector, speaker_switches, unique_speakers, curator_id, text
 
-Pinned call: file_id 4341191 (General Electric Q1 2020, index 2 in test split).
-  ~5741 s, 14 speakers, 147 speaker turns.
+Pinned call: file_id 4386541 (shortest call in the dataset with multiple speakers).
+  ~1097 s (~18.3 min), 5 speakers, 17 speaker turns.
+  Previously pinned to 4341191 (GE Q1 2020, ~5741s) — too long for CPU WhisperX.
 """
 from __future__ import annotations
 
@@ -42,9 +43,11 @@ _GITHUB_RAW = (
     "https://raw.githubusercontent.com/revdotcom/speech-datasets/main/earnings21"
 )
 
-# Pinned call: General Electric Q1 2020.
-# Identified by matching audio_length in the metadata CSV.
-EARNINGS_CALL_ID = "4341191"
+# Pinned call: shortest multi-speaker call in the dataset.
+# file_id 4386541: ~1097s (~18.3 min), 5 speakers, 17 speaker turns.
+# Identified by sorting earnings21-file-metadata.csv by audio_length ascending.
+# Re-pinned from 4341191 (GE Q1 2020, ~5741s) for CPU-tractable WhisperX runs.
+EARNINGS_CALL_ID = "4386541"
 
 # Tolerance (seconds) for the audio_length cross-check between the metadata CSV
 # and the HF dataset row. If the two differ by more than this, the CSV/HF ordering
@@ -65,7 +68,7 @@ def load(
 
     Args:
         call_id:   Earnings-21 file_id (numeric string). Default is the pinned
-                   slice (4341191, General Electric Q1 2020).
+                   slice (4386541, ~18.3 min, 5 speakers).
         audio_out: If given, write the call audio as a WAV to this path.
 
     Returns:

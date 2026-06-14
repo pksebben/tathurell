@@ -36,6 +36,7 @@ def load(
     condition: str = "sdm",
     meeting_id: str = AMI_MEETING_ID,
     audio_out: str | None = None,
+    max_seconds: float | None = None,
 ) -> tuple[Reference, str | None]:
     """Load a single AMI meeting from the HF dataset validation split.
 
@@ -44,10 +45,14 @@ def load(
     avoiding a full-split download.
 
     Args:
-        condition:  Dataset config name; "sdm" (far-field) or "ihm" (headset).
-        meeting_id: Which meeting to extract; default is the pinned slice.
-        audio_out:  If given, write a meeting-aligned mono WAV to this path.
-                    The audio timeline matches segment begin_time/end_time values.
+        condition:   Dataset config name; "sdm" (far-field) or "ihm" (headset).
+        meeting_id:  Which meeting to extract; default is the pinned slice.
+        audio_out:   If given, write a meeting-aligned mono WAV to this path.
+                     The audio timeline matches segment begin_time/end_time values.
+        max_seconds: If set, keep only segments with start < max_seconds and
+                     clip each kept segment's end to min(end, max_seconds). The
+                     written WAV (if audio_out is set) is also capped at this
+                     duration so audio and reference timestamps stay aligned.
 
     Returns:
         (Reference, audio_out_path_or_None)
@@ -74,6 +79,18 @@ def load(
             f"meeting {meeting_id!r} not found in AMI/{condition} validation split"
         )
 
+    # Apply time-excerpt filter: drop segments starting at or after max_seconds
+    # and clip the end of any segment that crosses the boundary.
+    if max_seconds is not None:
+        rows = [r for r in rows if float(r[KEY_START]) < max_seconds]
+        # Clip end_time for segments that extend past the boundary.
+        clipped_rows: list[dict] = []
+        for r in rows:
+            if float(r[KEY_END]) > max_seconds:
+                r = {**r, KEY_END: max_seconds}
+            clipped_rows.append(r)
+        rows = clipped_rows
+
     segments = [
         Segment(
             speaker=str(r[KEY_SPEAKER]),
@@ -85,17 +102,24 @@ def load(
     ]
 
     if audio_out is not None:
-        _write_meeting_audio(rows, audio_out)
+        _write_meeting_audio(rows, audio_out, max_seconds=max_seconds)
 
     return Reference(uri=f"ami_{condition}_{meeting_id}", segments=segments), audio_out
 
 
-def _write_meeting_audio(rows: list[dict], path: str) -> None:
+def _write_meeting_audio(
+    rows: list[dict],
+    path: str,
+    max_seconds: float | None = None,
+) -> None:
     """Reconstruct a meeting-aligned mono WAV from per-utterance AudioDecoder rows.
 
     Each utterance's decoded audio is placed at its begin_time offset within a
     zero-filled buffer whose length = ceil(max(end_time)) * sample_rate. Overlapping
     utterances are summed then clipped to [-1, 1]. The result is written as float32.
+
+    When max_seconds is set, the buffer is capped at ceil(max_seconds * sr) samples
+    so the written WAV matches the clipped Reference segment timeline exactly.
     """
     import sys
 
@@ -103,6 +127,9 @@ def _write_meeting_audio(rows: list[dict], path: str) -> None:
 
     # Determine meeting duration from reference times (seconds).
     max_end = max(float(r[KEY_END]) for r in rows)
+    # Honour max_seconds cap: never allocate more than the requested excerpt.
+    if max_seconds is not None:
+        max_end = min(max_end, max_seconds)
     total_samples = int(np.ceil(max_end * _SAMPLE_RATE))
     buffer = np.zeros(total_samples, dtype=np.float32)
 

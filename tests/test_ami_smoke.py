@@ -7,12 +7,28 @@ import os
 
 from eval.corpora.ami import load, AMI_MEETING_ID, _SAMPLE_RATE
 
+MAX_SECONDS_SMOKE = 60.0
+
 
 def test_ami_loads_multispeaker_reference():
     ref, _ = load(condition="sdm")
     assert len(ref.segments) > 10
     assert len({s.speaker for s in ref.segments}) >= 2
     assert all(s.end >= s.start for s in ref.segments)
+
+
+def test_ami_max_seconds_clips_reference():
+    """load(max_seconds=60) should produce segments all ending at or before 60s.
+
+    This tests the time-excerpting path added for tractability with CPU WhisperX.
+    Assertion is intentionally light — we check the boundary constraint only,
+    not exact segment counts (which vary by meeting).
+    """
+    ref, _ = load(condition="sdm", max_seconds=MAX_SECONDS_SMOKE)
+    assert len(ref.segments) > 0, "Expected at least one segment in the first 60s"
+    assert max(s.end for s in ref.segments) <= MAX_SECONDS_SMOKE, (
+        f"max(segment.end) exceeds max_seconds={MAX_SECONDS_SMOKE}"
+    )
 
 
 def test_ami_audio_reconstruction_duration():
