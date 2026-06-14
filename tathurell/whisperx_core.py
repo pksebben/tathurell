@@ -18,6 +18,9 @@ try:
 except ImportError:
     from whisperx.diarize import DiarizationPipeline
 
+# Convenience fallback, resolved against the CURRENT WORKING DIRECTORY — so it
+# only finds the file when the tool is run from the repo root. $HF_TOKEN works
+# from anywhere and is the primary source.
 DEFAULT_TOKEN_FILE = "eval/data/.hf_token"
 
 
@@ -46,7 +49,7 @@ class WhisperXTranscriber:
         self._device = device
         self._model = whisperx.load_model(model, device, compute_type=compute_type)
         self._diarize = DiarizationPipeline(
-            token=token or resolve_hf_token(), device=device
+            token=token if token is not None else resolve_hf_token(), device=device
         )
 
     def transcribe(self, audio_path: str) -> list:
