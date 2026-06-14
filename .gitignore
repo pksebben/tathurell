@@ -8,3 +8,4 @@ audio_*
 *.m4a
 *.transcription
 *.transcription.txt
+eval/data/
