@@ -1,130 +1,54 @@
 #!/usr/bin/env python3
-import os
+"""Transcribe + diarize an audio file with WhisperX, name speakers, write text.
+
+Output: "<name>: <text>" lines, one per speaker run, to <audio>.transcription.txt
+(or --output). Runs in the tathurell-eval venv. Needs HF_TOKEN (see whisperx_core).
+"""
+import argparse
 import sys
-from vosk import Model, KaldiRecognizer
-import json
-from pydub import AudioSegment
-import io
-import numpy as np
 
-audio_path = sys.argv[1]
-
-from pyannote.audio import Pipeline
-
-# pyannote's gated models require a Hugging Face token. Keep it out of source:
-# export HF_TOKEN=hf_... before running. (The previously hardcoded token was
-# leaked in git history and must be revoked on huggingface.co.)
-hf_token = os.environ.get("HF_TOKEN")
-if not hf_token:
-    sys.exit("HF_TOKEN environment variable is not set (needed for pyannote).")
-
-pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
-    use_auth_token=hf_token,
-)
-
-# send pipeline to GPU (when available)
-import torch
-import torchaudio
-
-pipeline.to(torch.device("mps"))
-
-# apply pretrained pipeline
-waveform, sample_rate = torchaudio.load(audio_path)
-diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate})
-
-# print the result
-turnlist = []
-
-for turn, _, speaker in diarization.itertracks(yield_label=True):
-
-    turnlist.append({"speaker": speaker, "start": turn.start, "end": turn.end})
-    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+from tathurell.naming import apply_names, group_by_speaker
+from tathurell.whisperx_core import WhisperXTranscriber, resolve_hf_token
 
 
-# Load the model
-model = Model("/Users/benmorsillo/code/ASSISTANTS/JOAN/models/vosk-model-en-us-0.42-gigaspeech")
+def prompt_names(groups):
+    """Ask the user to name each distinct speaker (once). EOF -> use the label."""
+    names = {}
+    for g in groups:
+        spk = g["speaker"]
+        if spk in names:
+            continue
+        print(f"Who said this?\n{g['text']}")
+        try:
+            answer = input("name: ").strip()
+        except EOFError:
+            answer = ""
+        names[spk] = answer or str(spk)
+    return names
 
-# Create a new recognizer with partial results config
-rec = KaldiRecognizer(model, 16000, '{"partial_results": True}')
 
-rec.SetWords(True)
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Transcribe + diarize audio with WhisperX.")
+    ap.add_argument("audio_path")
+    ap.add_argument("--output", default=None,
+                    help="output path (default: <audio_path>.transcription.txt)")
+    ap.add_argument("--model", default="large-v3", help="Whisper model (default: large-v3)")
+    args = ap.parse_args(argv)
 
-# Convert the mp3 file to wav
-audio = AudioSegment.from_mp3(audio_path)
-audio = audio.set_frame_rate(16000).set_channels(1)
-buf = io.BytesIO()
-audio.export(buf, format="wav")
-buf.seek(0)
+    token = resolve_hf_token()  # clean early exit before loading models if missing
+    words = WhisperXTranscriber(model=args.model, token=token).transcribe(args.audio_path)
+    if not words:
+        print("[tathurell] WARNING: no words transcribed.", file=sys.stderr)
 
-wav_data = np.frombuffer(buf.read(), dtype=np.int16)
+    groups = group_by_speaker(words)
+    names = prompt_names(groups)
+    text = apply_names(groups, names)
 
-combined_transcription = []
+    out_path = args.output or f"{args.audio_path}.transcription.txt"
+    with open(out_path, "w") as f:
+        f.write(text)
+    print(f"[tathurell] wrote {out_path}")
 
-# Process chunks of the audio data
-print("PROCESSING")
-for i in range(0, len(wav_data), 4000):
-    chunk = wav_data[i : i + 4000]
-    if rec.AcceptWaveform(chunk.tobytes()):
-        res = json.loads(rec.Result())
-        print(f"RES: {res}")
-        if "result" in res:
-            for word in res.get("result", []):
-                # vosk word timestamps are absolute (relative to the start of the
-                # whole stream — verified empirically, they do not reset per
-                # utterance), so they share a reference frame with pyannote's
-                # diarization turns. Attribute the word to the first turn that
-                # hasn't ended before the word starts. If the word falls past the
-                # last detected turn, fall back to that last speaker (otherwise
-                # `speaker` would carry over from the previous word, or be unbound
-                # on the very first word).
-                speaker = turnlist[-1]["speaker"] if turnlist else None
-                for turn in turnlist:
-                    if word["start"] <= turn["end"]:
-                        speaker = turn["speaker"]
-                        break
-                combined_transcription.append(
-                    {"word": word["word"], "speaker": speaker}
-                )
 
-# Get the final result without timestamps
-res = json.loads(rec.FinalResult())
-
-current_speaker = None
-current_chunk = ""
-diarized_transcription = []
-
-for word in combined_transcription:
-    if word["speaker"] != current_speaker:
-        # Speaker changed: flush the previous run, then start the new run with
-        # the word that triggered the change. (Previously this reset the chunk
-        # to "" without keeping the word, dropping the first word of every run.)
-        if current_speaker is not None:
-            diarized_transcription.append(
-                {"speaker": current_speaker, "text": current_chunk}
-            )
-        current_speaker = word["speaker"]
-        current_chunk = word["word"]
-    else:
-        current_chunk += f" {word['word']}"
-
-# Flush the final run (skip if there was no transcription at all).
-if current_speaker is not None:
-    diarized_transcription.append({"speaker": current_speaker, "text": current_chunk})
-
-names = {}
-
-for chunk in diarized_transcription:
-    if chunk["speaker"] in names.keys():
-        pass
-    else:
-        print(f"Who said this?\n{chunk['text']}")
-        name = input("input name:")
-        names[chunk["speaker"]] = name
-
-compiled_transcription = [
-    f"{names[chunk['speaker']]}: {chunk['text']}" for chunk in diarized_transcription
-]
-
-with open(f"{audio_path}.transcription.txt", "w") as f:
-    f.write("\n".join(compiled_transcription))
+if __name__ == "__main__":
+    main()
