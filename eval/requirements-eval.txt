@@ -1,17 +1,15 @@
-vosk
-pydub
-numpy
-torch
-torchaudio
-pyannote.audio>=3.1
-pyannote.metrics
-whisperx
-mlx-whisper
-openai-whisper
+# Eval + dev tooling. Layers on the runtime deps so they're defined in one place.
+-r ../requirements.txt
+
+# Metrics / corpora / test harness (not needed to run the tool)
 jiwer
 meeteval
-huggingface_hub
+pyannote.metrics
 datasets
 soundfile
 pytest
-flask
+
+# Alternative engines used only by the bake-off / parked seams
+vosk
+openai-whisper
+mlx-whisper

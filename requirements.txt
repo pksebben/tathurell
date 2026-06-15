@@ -1,4 +1,12 @@
-sounddevice
-numpy
-pydub
-eyed3
+# Runtime deps for the Tathurell transcription tool (tathurell_transcribe.py).
+# Pinned to versions verified in the bake-off / current env. whisperx 3.8.6 and
+# pyannote.audio 4.0.4 in particular are required for correctness
+# (see tathurell/whisperx_core.py). Eval/dev tooling layers on top in
+# eval/requirements-eval.txt. Transitive deps (soundfile, huggingface_hub, numpy,
+# faster-whisper, ...) resolve via these and are intentionally not pinned here.
+whisperx==3.8.6
+pyannote.audio==4.0.4
+torch==2.8.0
+torchaudio==2.8.0
+pydub==0.25.1
+Flask==3.1.3
