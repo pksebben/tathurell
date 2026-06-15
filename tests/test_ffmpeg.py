@@ -51,3 +51,14 @@ def test_ensure_replaces_stale_symlink(monkeypatch):
     # The stale symlink must have been replaced; it must now point to the bundled binary.
     assert os.path.islink(link), "shim link was not created"
     assert os.path.realpath(link) == os.path.realpath(ffmpeg_exe())
+
+
+def test_whisperx_load_audio_uses_bundled_ffmpeg(monkeypatch):
+    # whisperx.load_audio runs a bare `ffmpeg` subprocess. With no system ffmpeg
+    # on PATH, it must still decode after ensure_ffmpeg_on_path() shims it.
+    import whisperx
+
+    monkeypatch.setenv("PATH", SCRUBBED)
+    ensure_ffmpeg_on_path()
+    audio = whisperx.load_audio("dollop_test_a.mp3")
+    assert audio is not None and len(audio) > 16000  # > 1s at 16 kHz

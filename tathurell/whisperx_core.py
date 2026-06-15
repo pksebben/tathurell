@@ -18,6 +18,7 @@ try:
 except ImportError:
     from whisperx.diarize import DiarizationPipeline
 
+from tathurell.ffmpeg import ensure_ffmpeg_on_path
 from tathurell.realign import realign_speakers
 
 # Convenience fallback, resolved against the CURRENT WORKING DIRECTORY — so it
@@ -56,6 +57,7 @@ class WhisperXTranscriber:
 
     def transcribe(self, audio_path: str) -> list:
         """Return [{"word", "start", "end", "speaker"}] for the audio file."""
+        ensure_ffmpeg_on_path()  # bundled ffmpeg shadows any system one for load_audio
         audio = whisperx.load_audio(audio_path)
         result = self._model.transcribe(audio, batch_size=8)
         align_model, meta = whisperx.load_align_model(
