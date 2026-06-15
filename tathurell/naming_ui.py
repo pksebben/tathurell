@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import webbrowser
+from html import escape
 
 from flask import Flask, request, send_file
 from werkzeug.serving import make_server
@@ -42,7 +43,7 @@ def create_app(samples, clip_dir, result, done):
     @app.route("/")
     def index():
         rows = "".join(
-            _ROW.format(spk=spk, text=s["text"].replace('"', "&quot;"))
+            _ROW.format(spk=spk, text=escape(s["text"]))
             for spk, s in samples.items()
         )
         return _PAGE.format(rows=rows)
