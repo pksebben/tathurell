@@ -38,8 +38,10 @@ def ensure_ffmpeg_on_path():
     """
     exe = ffmpeg_exe()
     current = shutil.which("ffmpeg")
+    # If PATH already resolves a bare `ffmpeg` to the bundled binary (we've run
+    # before, or the shim dir is already on PATH), there's nothing to do.
     if current and os.path.realpath(current) == os.path.realpath(exe):
-        return  # a bare `ffmpeg` already resolves to the bundled binary
+        return
 
     shim_dir = os.path.join(tempfile.gettempdir(), "tathurell_ffmpeg")
     os.makedirs(shim_dir, exist_ok=True)
