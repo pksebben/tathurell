@@ -97,6 +97,12 @@ class Job:
 _SHELL = "<!doctype html><html><body>tathurell</body></html>"
 
 
+def _out_name(audio_name):
+    """Output filename derived from the uploaded audio name."""
+    stem = os.path.splitext(os.path.basename(audio_name or "transcript"))[0]
+    return f"{stem}.transcription.txt"
+
+
 def _run_job(job, transcriber_factory, audio_path):
     """Background worker: transcribe -> group + sample -> extract clips -> naming.
     Any exception is captured into the job as an error (never kills the server)."""
@@ -151,5 +157,38 @@ def create_app(transcriber_factory=WhisperXTranscriber):
             target=_run_job, args=(job, transcriber_factory, audio_path), daemon=True
         ).start()
         return ("", 202)
+
+    @app.route("/clip/<speaker>")
+    def clip(speaker):
+        if not job.samples or speaker not in job.samples:
+            return ("unknown speaker", 404)
+        return send_file(os.path.join(job.tmpdir, f"{speaker}.wav"),
+                         mimetype="audio/wav")
+
+    @app.route("/names", methods=["POST"])
+    def names():
+        if job.groups is None or not job.samples:
+            return ("no transcript to name", 409)
+        data = request.get_json(silent=True) or {}
+        resolved = {spk: ((data.get(spk) or "").strip() or spk) for spk in job.samples}
+        job.set_done(apply_names(job.groups, resolved))
+        return ("", 200)
+
+    @app.route("/result")
+    def result():
+        if job.text is None:
+            return ("no result yet", 409)
+        return jsonify({"text": job.text, "filename": _out_name(job.audio_name)})
+
+    @app.route("/download")
+    def download():
+        if job.text is None:
+            return ("no result yet", 409)
+        return Response(
+            job.text,
+            mimetype="text/plain",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{_out_name(job.audio_name)}"'},
+        )
 
     return app

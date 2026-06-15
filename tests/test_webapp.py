@@ -1,4 +1,5 @@
 import time
+import wave
 
 from tathurell.webapp import Job, create_app
 
@@ -121,3 +122,35 @@ def test_status_starts_idle_and_reset_works():
     assert c.get("/status").get_json() == {"stage": "idle"}
     assert c.post("/reset").status_code == 200
     assert c.get("/status").get_json() == {"stage": "idle"}
+
+
+def test_clip_serves_wav_and_unknown_404():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    _poll(c, "naming")
+    r = c.get("/clip/SPEAKER_00")
+    assert r.status_code == 200
+    assert r.mimetype == "audio/wav"
+    assert c.get("/clip/NOPE").status_code == 404
+
+
+def test_names_then_result_and_download():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    _poll(c, "naming")
+    # Name one speaker; leave the other blank -> falls back to its label.
+    assert c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": ""}).status_code == 200
+    assert c.get("/status").get_json()["stage"] == "done"
+
+    res = c.get("/result").get_json()
+    assert res["filename"] == "dollop_test_a.transcription.txt"
+    assert "Alice: the spanish version" in res["text"]
+    assert "SPEAKER_01: welcome gentlemen" in res["text"]
+
+    dl = c.get("/download")
+    assert dl.status_code == 200
+    assert dl.mimetype == "text/plain"
+    assert "dollop_test_a.transcription.txt" in dl.headers["Content-Disposition"]
+    assert b"Alice: the spanish version" in dl.data
