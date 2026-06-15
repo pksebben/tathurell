@@ -5,8 +5,16 @@ create_app builds the Flask app (pure-ish, test-client friendly). collect_names
 blocks until the form is submitted.
 """
 import os
+import shutil
+import sys
+import tempfile
+import threading
+import webbrowser
 
 from flask import Flask, request, send_file
+from werkzeug.serving import make_server
+
+from tathurell.sampling import extract_clip
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Name the speakers</title>
 <style>body{{font-family:sans-serif;max-width:760px;margin:2rem auto}}
@@ -54,3 +62,31 @@ def create_app(samples, clip_dir, result, done):
         return "<p>Names saved. You can close this tab.</p>"
 
     return app
+
+
+def collect_names(samples, audio_path, open_browser=True):
+    """Extract a clip per speaker, serve the modal, block until submit; return names.
+
+    Returns {speaker: name}. On Ctrl-C (tab closed without submitting) falls back
+    to using each speaker's label as its name.
+    """
+    clip_dir = tempfile.mkdtemp(prefix="tathurell_clips_")
+    result, done = {}, threading.Event()
+    try:
+        for spk, s in samples.items():
+            extract_clip(audio_path, s["start"], s["end"], os.path.join(clip_dir, f"{spk}.wav"))
+        app = create_app(samples, clip_dir, result, done)
+        server = make_server("127.0.0.1", 0, app)  # port 0 -> OS picks a free port
+        url = f"http://127.0.0.1:{server.server_port}/"
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        print(f"[tathurell] Name the speakers at {url} (opening browser)...", file=sys.stderr)
+        if open_browser:
+            webbrowser.open(url)
+        try:
+            done.wait()
+        except KeyboardInterrupt:
+            result = {spk: spk for spk in samples}
+        server.shutdown()
+        return result
+    finally:
+        shutil.rmtree(clip_dir, ignore_errors=True)
