@@ -19,9 +19,6 @@ from tathurell.naming import apply_names, group_by_speaker
 from tathurell.sampling import extract_clip, pick_speaker_samples
 from tathurell.whisperx_core import WhisperXTranscriber
 
-# Stages reported while the background job runs (before naming).
-_RUNNING_STAGES = ("transcribing", "aligning", "diarizing", "finishing")
-
 
 class Job:
     """Single in-process transcription job: one-shot, lock-guarded state.
@@ -143,8 +140,12 @@ def create_app(transcriber_factory=WhisperXTranscriber):
         if not f or not f.filename:
             return ("no audio file", 400)
         tmpdir = tempfile.mkdtemp(prefix="tathurell_web_")
-        audio_path = os.path.join(tmpdir, "input" + os.path.splitext(f.filename)[1])
-        f.save(audio_path)
+        try:
+            audio_path = os.path.join(tmpdir, "input" + os.path.splitext(f.filename)[1])
+            f.save(audio_path)
+        except Exception:
+            shutil.rmtree(tmpdir, ignore_errors=True)  # don't orphan the temp dir
+            raise
         job.start(tmpdir, f.filename)
         threading.Thread(
             target=_run_job, args=(job, transcriber_factory, audio_path), daemon=True
