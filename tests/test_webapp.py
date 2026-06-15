@@ -1,5 +1,3 @@
-import os
-
 from tathurell.webapp import Job
 
 
