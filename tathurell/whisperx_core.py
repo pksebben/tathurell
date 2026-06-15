@@ -55,16 +55,29 @@ class WhisperXTranscriber:
             token=token if token is not None else resolve_hf_token(), device=device
         )
 
-    def transcribe(self, audio_path: str) -> list:
-        """Return [{"word", "start", "end", "speaker"}] for the audio file."""
+    def transcribe(self, audio_path: str, progress=None) -> list:
+        """Return [{"word", "start", "end", "speaker"}] for the audio file.
+
+        progress: optional callback(stage_name) invoked at each coarse pipeline
+        stage ("transcribing"/"aligning"/"diarizing"/"finishing"). Default None
+        (the CLI passes nothing -> unchanged behavior).
+        """
+        def _p(stage):
+            if progress is not None:
+                progress(stage)
+
         ensure_ffmpeg_on_path()  # bundled ffmpeg shadows any system one for load_audio
         audio = whisperx.load_audio(audio_path)
+        _p("transcribing")
         result = self._model.transcribe(audio, batch_size=8)
+        _p("aligning")
         align_model, meta = whisperx.load_align_model(
             language_code=result["language"], device=self._device
         )
         result = whisperx.align(result["segments"], align_model, meta, audio, self._device)
+        _p("diarizing")
         diar = self._diarize(audio)
+        _p("finishing")
         # fill_nearest=True so words in a diarization gap get the nearest speaker
         # instead of None (whisperx default leaves them unassigned).
         result = whisperx.assign_word_speakers(diar, result, fill_nearest=True)
