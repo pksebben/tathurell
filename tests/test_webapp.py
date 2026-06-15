@@ -41,3 +41,21 @@ def test_reset_clears_state_and_tmpdir(tmp_path):
     job.reset()
     assert job.snapshot() == {"stage": "idle"}
     assert not d.exists()  # tmpdir removed
+
+
+from tathurell.webapp import create_app
+
+
+def test_index_serves_shell():
+    app = create_app()
+    r = app.test_client().get("/")
+    assert r.status_code == 200
+    assert b"<!doctype html>" in r.data.lower()
+
+
+def test_status_starts_idle_and_reset_works():
+    app = create_app()
+    c = app.test_client()
+    assert c.get("/status").get_json() == {"stage": "idle"}
+    assert c.post("/reset").status_code == 200
+    assert c.get("/status").get_json() == {"stage": "idle"}

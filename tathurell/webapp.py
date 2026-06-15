@@ -93,3 +93,31 @@ class Job:
                     {"id": spk, "text": s["text"]} for spk, s in self.samples.items()
                 ]
             return snap
+
+
+# Replaced with the full single-page app in a later task; kept as a constant so
+# the route never changes.
+_SHELL = "<!doctype html><html><body>tathurell</body></html>"
+
+
+def create_app(transcriber_factory=WhisperXTranscriber):
+    """Build the front-door app. transcriber_factory is injected so tests can
+    supply a fake (no model / no HF token)."""
+    app = Flask(__name__)
+    job = Job()
+    app.config["JOB"] = job  # exposed for tests
+
+    @app.route("/")
+    def index():
+        return _SHELL
+
+    @app.route("/status")
+    def status():
+        return jsonify(job.snapshot())
+
+    @app.route("/reset", methods=["POST"])
+    def reset():
+        job.reset()
+        return ("", 200)
+
+    return app
