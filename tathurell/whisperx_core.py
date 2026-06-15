@@ -18,6 +18,8 @@ try:
 except ImportError:
     from whisperx.diarize import DiarizationPipeline
 
+from tathurell.realign import realign_speakers
+
 # Convenience fallback, resolved against the CURRENT WORKING DIRECTORY — so it
 # only finds the file when the tool is run from the repo root. $HF_TOKEN works
 # from anywhere and is the primary source.
@@ -61,7 +63,9 @@ class WhisperXTranscriber:
         )
         result = whisperx.align(result["segments"], align_model, meta, audio, self._device)
         diar = self._diarize(audio)
-        result = whisperx.assign_word_speakers(diar, result)
+        # fill_nearest=True so words in a diarization gap get the nearest speaker
+        # instead of None (whisperx default leaves them unassigned).
+        result = whisperx.assign_word_speakers(diar, result, fill_nearest=True)
         words = []
         for seg in result["segments"]:
             for w in seg.get("words", []):
@@ -73,4 +77,6 @@ class WhisperXTranscriber:
                     "end": float(w["end"]),
                     "speaker": w.get("speaker"),
                 })
-        return words
+        # whisperx assigns each word independently, so a single word at a turn
+        # boundary can flip speaker mid-sentence. Realign per sentence by majority.
+        return realign_speakers(words)
