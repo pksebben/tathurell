@@ -36,3 +36,16 @@ def pick_speaker_samples(words, max_seconds=8.0):
         text = " ".join(w["word"] for w in ws if w["start"] < cap_end)
         out[spk] = {"start": start, "end": end, "text": text}
     return out
+
+
+def extract_clip(audio_path, start, end, out_path):
+    """Write the [start, end] second slice of audio_path to out_path as a WAV.
+
+    Uses pydub (ffmpeg) so any input format (mp3/wav/m4a...) works; pydub indexes
+    in milliseconds.
+    """
+    from pydub import AudioSegment
+
+    audio = AudioSegment.from_file(audio_path)
+    clip = audio[int(start * 1000):int(end * 1000)]
+    clip.export(out_path, format="wav")
