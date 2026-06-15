@@ -33,10 +33,15 @@ ffmpeg has zero decode-fidelity risk.
 The single source of truth for "where is ffmpeg".
 - `ffmpeg_exe() -> str` — return the bundled binary path from `imageio_ffmpeg.get_ffmpeg_exe()`,
   memoized. Raises a clear `RuntimeError` if the binary is missing/not executable.
-- `ensure_ffmpeg_on_path() -> None` — idempotently prepend `os.path.dirname(ffmpeg_exe())` to
-  `os.environ["PATH"]` (only if that dir is not already the first hit for `ffmpeg`). This is how
-  `whisperx.load_audio`'s hardcoded bare `"ffmpeg"` subprocess resolves to the bundled binary; we
-  cannot patch whisperx, and PATH is its only injection point.
+- `ensure_ffmpeg_on_path() -> None` — make a bare `ffmpeg` resolve to the bundled binary,
+  idempotently. **Wrinkle:** imageio-ffmpeg's binary is named like `ffmpeg-osx-arm64-v7.1`, *not*
+  `ffmpeg`, so just putting its directory on PATH does **not** satisfy whisperx's hardcoded
+  `subprocess.run(["ffmpeg", ...])`. So we create a stable shim dir (`<tmpdir>/tathurell_ffmpeg/`)
+  holding a symlink named `ffmpeg` → the bundled binary, and prepend that dir to `os.environ["PATH"]`.
+  Idempotent: returns early when `shutil.which("ffmpeg")` already realpaths to the bundled exe, and
+  never double-adds the shim dir. We cannot patch whisperx, so PATH is the only injection point.
+  (POSIX symlink; Windows would copy the binary instead — out of scope for the current macOS/Linux
+  target.)
 
 ### `tathurell/whisperx_core.py` (change)
 - In `WhisperXTranscriber.transcribe()`, call `ensure_ffmpeg_on_path()` **before**
@@ -58,13 +63,15 @@ The single source of truth for "where is ffmpeg".
   uses `ffprobe` to autodetect format. Rather than gamble on pydub tolerating a missing prober (the
   exact "works on my machine, breaks on ship" risk we are removing), we issue one ffmpeg command we
   fully control. ffmpeg autodetects the input container without needing ffprobe. `extract_clip` is
-  pydub's only use, so the dependency is removed.
+  pydub's only *runtime* use, so it leaves the runtime deps (it stays an eval-only dep — see below).
 
 ### Requirements (change)
 - `requirements.txt`: **add** `imageio-ffmpeg==<pinned>` (pin captured at implementation time from the
-  installed version, same convention as the rest of the file); **remove** `pydub`.
-- `eval/requirements-eval.txt`: layers on `requirements.txt`, so it inherits ffmpeg automatically; no
-  pydub line to remove there (it was already de-duplicated into the runtime file).
+  installed version, same convention as the rest of the file); **remove** `pydub` (runtime no longer
+  imports it once `extract_clip` is rewritten).
+- `eval/requirements-eval.txt`: layers on `requirements.txt`, so it inherits the bundled ffmpeg. **Add**
+  `pydub` here — the eval-only vosk bake-off engine (`eval/engines/vosk_pyannote.py`) still imports it.
+  Net effect: pydub moves from a runtime dep to an eval-only dep.
 
 ## 3. Data flow
 
@@ -104,8 +111,9 @@ No system `ffmpeg` is consulted on either path once the bundled dir is at the fr
 ## 6. Testing
 
 - **`ffmpeg_exe()`** returns a path that exists and is executable.
-- **`ensure_ffmpeg_on_path()`** puts the bundled dir ahead of the system one: after calling it,
-  `shutil.which("ffmpeg")` resolves to the bundled binary.
+- **`ensure_ffmpeg_on_path()`** makes a bare `ffmpeg` resolve to the bundled binary: after calling it,
+  `shutil.which("ffmpeg")` is non-None and `os.path.realpath` of it equals the bundled exe (it resolves
+  through the `ffmpeg` symlink shim). Calling it twice does not grow `PATH`.
 - **Clean-machine simulation (the load-bearing test):** with `os.environ["PATH"]` temporarily scrubbed
   of any system ffmpeg, (a) `extract_clip` on `dollop_test_a.mp3` still writes a valid ~Ns WAV, and
   (b) `whisperx.load_audio` of a short clip still decodes — proving the bundled binary, not a system
@@ -120,6 +128,8 @@ No system `ffmpeg` is consulted on either path once the bundled dir is at the fr
 - Transcription output is unchanged: load_audio's decode is identical (same ffmpeg, same flags).
 - `extract_clip`'s output WAV is 44.1 kHz stereo 16-bit PCM — same as the current pydub export, so the
   naming modal plays clips exactly as before.
-- `pydub` removed from the dependency set; no code other than `extract_clip` imported it.
+- `pydub` removed from the **runtime** deps (its only runtime user, `extract_clip`, no longer needs it);
+  it moves to `eval/requirements-eval.txt` because the eval-only vosk engine
+  (`eval/engines/vosk_pyannote.py`) still imports it. No runtime code imports pydub after this change.
 - On a machine that *does* have a system ffmpeg, behavior is identical — the bundled one simply takes
   precedence on `PATH`.
