@@ -14,3 +14,4 @@ huggingface_hub
 datasets
 soundfile
 pytest
+flask
