@@ -7,6 +7,7 @@ meeteval
 pyannote.metrics
 datasets
 soundfile
+pydub
 pytest
 
 # Alternative engines used only by the bake-off / parked seams
