@@ -1,6 +1,7 @@
 """Pick a representative audio sample per speaker, and extract the clip.
 
-pick_speaker_samples is pure (operates on the word list). extract_clip does I/O.
+pick_speaker_samples is pure (operates on the word list). extract_clip does I/O
+via the bundled ffmpeg binary (tathurell.ffmpeg) — no system ffmpeg required.
 """
 
 
@@ -41,11 +42,24 @@ def pick_speaker_samples(words, max_seconds=8.0):
 def extract_clip(audio_path, start, end, out_path):
     """Write the [start, end] second slice of audio_path to out_path as a WAV.
 
-    Uses pydub (ffmpeg) so any input format (mp3/wav/m4a...) works; pydub indexes
-    in milliseconds.
+    Calls the bundled ffmpeg directly (tathurell.ffmpeg) so no system ffmpeg is
+    needed. Output is 44.1 kHz stereo 16-bit PCM, which the naming modal plays
+    in-browser. `-ss` before `-i` is a fast seek (cheap on long files); `-vn`
+    drops any video/cover-art stream.
     """
-    from pydub import AudioSegment
+    import subprocess
 
-    audio = AudioSegment.from_file(audio_path)
-    clip = audio[int(start * 1000):int(end * 1000)]
-    clip.export(out_path, format="wav")
+    from tathurell.ffmpeg import ffmpeg_exe
+
+    cmd = [
+        ffmpeg_exe(), "-nostdin", "-y",
+        "-ss", str(start), "-i", audio_path, "-t", str(end - start),
+        "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
+        out_path,
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg failed to extract clip from {audio_path!r}: "
+            f"{proc.stderr.decode(errors='replace')}"
+        )
