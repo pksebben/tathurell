@@ -1,4 +1,69 @@
-from tathurell.webapp import Job
+import time
+
+from tathurell.webapp import Job, create_app
+
+
+class FakeTranscriber:
+    """Stand-in for WhisperXTranscriber: fires the stage callbacks and returns
+    canned words whose timestamps fall inside dollop_test_a.mp3 (so extract_clip
+    produces real clips). No model, no token."""
+
+    def transcribe(self, audio_path, progress=None):
+        for stage in ("transcribing", "aligning", "diarizing", "finishing"):
+            if progress is not None:
+                progress(stage)
+        return [
+            {"word": "the", "start": 0.2, "end": 0.4, "speaker": "SPEAKER_00"},
+            {"word": "spanish", "start": 0.4, "end": 0.9, "speaker": "SPEAKER_00"},
+            {"word": "version", "start": 0.9, "end": 1.4, "speaker": "SPEAKER_00"},
+            {"word": "welcome", "start": 2.0, "end": 2.4, "speaker": "SPEAKER_01"},
+            {"word": "gentlemen", "start": 2.4, "end": 3.0, "speaker": "SPEAKER_01"},
+        ]
+
+
+def _poll(client, target, tries=200, delay=0.05):
+    """Poll GET /status until stage == target (or 'error'); return the snapshot."""
+    snap = None
+    for _ in range(tries):
+        snap = client.get("/status").get_json()
+        if snap["stage"] in (target, "error"):
+            return snap
+        time.sleep(delay)
+    raise AssertionError(f"stage never reached {target!r}; last={snap}")
+
+
+def _upload(client, path="dollop_test_a.mp3"):
+    with open(path, "rb") as f:
+        return client.post(
+            "/upload",
+            data={"audio": (f, path)},
+            content_type="multipart/form-data",
+        )
+
+
+def test_upload_runs_job_to_naming():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    assert _upload(c).status_code == 202
+    snap = _poll(c, "naming")
+    assert snap["stage"] == "naming"
+    assert {s["id"] for s in snap["speakers"]} == {"SPEAKER_00", "SPEAKER_01"}
+
+
+def test_upload_rejected_when_busy():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    # Immediately try again; whatever the stage, a second upload is refused until idle.
+    r2 = _upload(c)
+    assert r2.status_code == 409
+    _poll(c, "naming")  # let the first job settle
+
+
+def test_upload_without_file_is_rejected():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    r = app.test_client().post("/upload", data={}, content_type="multipart/form-data")
+    assert r.status_code == 400
 
 
 def test_job_starts_idle():
@@ -41,9 +106,6 @@ def test_reset_clears_state_and_tmpdir(tmp_path):
     job.reset()
     assert job.snapshot() == {"stage": "idle"}
     assert not d.exists()  # tmpdir removed
-
-
-from tathurell.webapp import create_app
 
 
 def test_index_serves_shell():

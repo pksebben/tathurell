@@ -100,6 +100,21 @@ class Job:
 _SHELL = "<!doctype html><html><body>tathurell</body></html>"
 
 
+def _run_job(job, transcriber_factory, audio_path):
+    """Background worker: transcribe -> group + sample -> extract clips -> naming.
+    Any exception is captured into the job as an error (never kills the server)."""
+    try:
+        words = transcriber_factory().transcribe(audio_path, progress=job.set_stage)
+        groups = group_by_speaker(words)
+        samples = pick_speaker_samples(words)
+        for spk, s in samples.items():
+            extract_clip(audio_path, s["start"], s["end"],
+                         os.path.join(job.tmpdir, f"{spk}.wav"))
+        job.set_naming(groups, samples)
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
+        job.set_error(str(exc))
+
+
 def create_app(transcriber_factory=WhisperXTranscriber):
     """Build the front-door app. transcriber_factory is injected so tests can
     supply a fake (no model / no HF token)."""
@@ -119,5 +134,21 @@ def create_app(transcriber_factory=WhisperXTranscriber):
     def reset():
         job.reset()
         return ("", 200)
+
+    @app.route("/upload", methods=["POST"])
+    def upload():
+        if job.snapshot()["stage"] != "idle":
+            return ("a job is already running", 409)
+        f = request.files.get("audio")
+        if not f or not f.filename:
+            return ("no audio file", 400)
+        tmpdir = tempfile.mkdtemp(prefix="tathurell_web_")
+        audio_path = os.path.join(tmpdir, "input" + os.path.splitext(f.filename)[1])
+        f.save(audio_path)
+        job.start(tmpdir, f.filename)
+        threading.Thread(
+            target=_run_job, args=(job, transcriber_factory, audio_path), daemon=True
+        ).start()
+        return ("", 202)
 
     return app
