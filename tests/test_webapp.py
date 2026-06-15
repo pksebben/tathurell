@@ -154,3 +154,13 @@ def test_names_then_result_and_download():
     assert dl.mimetype == "text/plain"
     assert "dollop_test_a.transcription.txt" in dl.headers["Content-Disposition"]
     assert b"Alice: the spanish version" in dl.data
+
+
+def test_shell_wires_all_views_and_endpoints():
+    html = create_app().test_client().get("/").get_data(as_text=True)
+    # The four views the JS swaps between:
+    for view in ("view-upload", "view-working", "view-naming", "view-result"):
+        assert f'id="{view}"' in html
+    # The JS talks to every endpoint:
+    for ep in ("/upload", "/status", "/names", "/result", "/download", "/reset", "/clip/"):
+        assert ep in html

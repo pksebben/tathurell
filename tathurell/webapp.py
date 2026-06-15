@@ -92,9 +92,100 @@ class Job:
             return snap
 
 
-# Replaced with the full single-page app in a later task; kept as a constant so
-# the route never changes.
-_SHELL = "<!doctype html><html><body>tathurell</body></html>"
+_SHELL = """<!doctype html><html><head><meta charset="utf-8">
+<title>Tathurell — transcribe</title><style>
+body{font-family:sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem}
+.hidden{display:none}.row{border:1px solid #ccc;border-radius:8px;padding:1rem;margin:1rem 0}
+.txt{color:#444;font-style:italic;margin:.5rem 0}input{font-size:1rem;padding:.3rem}
+button{font-size:1rem;padding:.5rem 1rem}#err{color:#b00}
+pre{white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:1rem;max-height:50vh;overflow:auto}
+</style></head><body><h2>Tathurell</h2>
+
+<div id="view-upload">
+  <p>Choose an audio file to transcribe.</p>
+  <input type="file" id="file" accept="audio/*">
+  <button id="go">Transcribe</button>
+</div>
+
+<div id="view-working" class="hidden">
+  <p><span id="spin">◐</span> <span id="stage">Starting…</span></p>
+  <p class="txt">This can take a few minutes for long audio.</p>
+  <p id="err"></p>
+  <button id="working-reset" class="hidden">Start over</button>
+</div>
+
+<div id="view-naming" class="hidden">
+  <h3>Who is each speaker?</h3>
+  <form id="names"></form>
+  <button id="save">Save names</button>
+</div>
+
+<div id="view-result" class="hidden">
+  <h3>Transcript</h3>
+  <pre id="preview"></pre>
+  <a id="download" href="/download"><button>⤓ Download transcript</button></a>
+  <button id="restart">↺ Start over</button>
+</div>
+
+<script>
+var LABELS={transcribing:"Transcribing…",aligning:"Aligning words…",
+  diarizing:"Identifying speakers…",finishing:"Finishing…"};
+var views=["upload","working","naming","result"];
+function show(v){views.forEach(function(n){
+  document.getElementById("view-"+n).classList.toggle("hidden",n!==v);});}
+function el(id){return document.getElementById(id);}
+
+el("go").onclick=function(){
+  var f=el("file").files[0]; if(!f){alert("Pick a file first.");return;}
+  var fd=new FormData(); fd.append("audio",f);
+  fetch("/upload",{method:"POST",body:fd}).then(function(r){
+    if(!r.ok){r.text().then(function(t){alert(t);});return;}
+    el("err").textContent=""; el("working-reset").classList.add("hidden");
+    show("working"); poll();});
+};
+
+function poll(){
+  fetch("/status").then(function(r){return r.json();}).then(function(s){
+    if(s.stage==="error"){el("stage").textContent="Something went wrong.";
+      el("err").textContent=s.error||""; el("working-reset").classList.remove("hidden");return;}
+    if(["transcribing","aligning","diarizing","finishing"].indexOf(s.stage)>=0){
+      el("stage").textContent=LABELS[s.stage]; show("working"); setTimeout(poll,1000);return;}
+    if(s.stage==="naming"){renderNaming(s.speakers); show("naming");return;}
+    if(s.stage==="done"){loadResult();return;}
+  });
+}
+
+function renderNaming(speakers){
+  var form=el("names"); form.innerHTML="";
+  speakers.forEach(function(sp){
+    var div=document.createElement("div"); div.className="row";
+    // Single-quoted JS strings so the HTML attribute double-quotes need no escaping.
+    div.innerHTML='<b>'+sp.id+'</b> <audio controls src="/clip/'+sp.id+'"></audio>'+
+      '<div class="txt"></div><label>Name: <input data-id="'+sp.id+'" placeholder="'+sp.id+'"></label>';
+    div.querySelector(".txt").textContent='"'+sp.text+'"';
+    form.appendChild(div);});
+}
+
+el("save").onclick=function(){
+  var names={};
+  el("names").querySelectorAll("input").forEach(function(i){names[i.dataset.id]=i.value;});
+  fetch("/names",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(names)}).then(function(r){if(r.ok)loadResult();});
+};
+
+function loadResult(){
+  fetch("/result").then(function(r){return r.json();}).then(function(res){
+    el("preview").textContent=res.text;
+    el("download").setAttribute("download",res.filename);
+    show("result");});
+}
+
+function restart(){fetch("/reset",{method:"POST"}).then(function(){
+  el("file").value=""; show("upload");});}
+el("restart").onclick=restart; el("working-reset").onclick=restart;
+
+show("upload");
+</script></body></html>"""
 
 
 def _out_name(audio_name):
@@ -192,3 +283,23 @@ def create_app(transcriber_factory=WhisperXTranscriber):
         )
 
     return app
+
+
+def main():
+    """Launch the front door: bind a free localhost port, open the browser, serve
+    until interrupted (NOT block-until-submit like the CLI naming modal)."""
+    app = create_app()
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    url = f"http://127.0.0.1:{server.server_port}/"
+    print(f"[tathurell] front door at {url} (opening browser; Ctrl-C to quit)...",
+          file=sys.stderr)
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[tathurell] shutting down", file=sys.stderr)
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
