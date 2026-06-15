@@ -152,7 +152,8 @@ function poll(){
       el("stage").textContent=LABELS[s.stage]; show("working"); setTimeout(poll,1000);return;}
     if(s.stage==="naming"){renderNaming(s.speakers); show("naming");return;}
     if(s.stage==="done"){loadResult();return;}
-  });
+    setTimeout(poll,1000);  // unknown/transient stage: keep polling rather than freeze
+  }).catch(function(){setTimeout(poll,1000);});  // transient /status failure: retry
 }
 
 function renderNaming(speakers){
@@ -170,14 +171,15 @@ el("save").onclick=function(){
   var names={};
   el("names").querySelectorAll("input").forEach(function(i){names[i.dataset.id]=i.value;});
   fetch("/names",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(names)}).then(function(r){if(r.ok)loadResult();});
+    body:JSON.stringify(names)}).then(function(r){
+      if(r.ok){loadResult();} else {r.text().then(function(t){alert(t);});}});
 };
 
 function loadResult(){
   fetch("/result").then(function(r){return r.json();}).then(function(res){
     el("preview").textContent=res.text;
     el("download").setAttribute("download",res.filename);
-    show("result");});
+    show("result");}).catch(function(){alert("Could not load the result.");});
 }
 
 function restart(){fetch("/reset",{method:"POST"}).then(function(){
