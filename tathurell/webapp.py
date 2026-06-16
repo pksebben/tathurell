@@ -15,7 +15,7 @@ import webbrowser
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.serving import make_server
 
-from tathurell.naming import apply_names, group_by_speaker
+from tathurell.naming import apply_names, group_by_speaker, render_runs
 from tathurell.sampling import extract_clip, pick_speaker_samples
 from tathurell.whisperx_core import WhisperXTranscriber
 
@@ -37,18 +37,21 @@ class Job:
         self.stage = "idle"
         self.error = None
         self.audio_name = None
+        self.audio_path = None
         self.samples = None  # {speaker: {"start","end","text"}}
         self.groups = None   # [{"speaker","text"}]
+        self.runs = None     # [{"speaker","text","start","end","confidence"}] for review
         self.text = None     # final named transcript
 
     @property
     def tmpdir(self):
         return self._tmpdir
 
-    def start(self, tmpdir, audio_name):
+    def start(self, tmpdir, audio_name, audio_path=None):
         with self.lock:
             self._tmpdir = tmpdir
             self.audio_name = audio_name
+            self.audio_path = audio_path
             self.error = None
             self.stage = "transcribing"
 
@@ -61,6 +64,11 @@ class Job:
             self.groups = groups
             self.samples = samples
             self.stage = "naming"
+
+    def set_review(self, runs):
+        with self.lock:
+            self.runs = runs
+            self.stage = "review"
 
     def set_done(self, text):
         with self.lock:
@@ -89,6 +97,13 @@ class Job:
                 snap["speakers"] = [
                     {"id": spk, "text": s["text"]} for spk, s in self.samples.items()
                 ]
+            if self.stage == "review" and self.runs is not None:
+                snap["runs"] = [
+                    {"i": i, "speaker": r["speaker"], "text": r["text"],
+                     "start": r["start"], "end": r["end"], "confidence": r["confidence"]}
+                    for i, r in enumerate(self.runs)
+                ]
+                snap["names"] = sorted({r["speaker"] for r in self.runs if r["speaker"]})
             return snap
 
 
@@ -245,7 +260,7 @@ def create_app(transcriber_factory=WhisperXTranscriber):
         except Exception:
             shutil.rmtree(tmpdir, ignore_errors=True)  # don't orphan the temp dir
             raise
-        job.start(tmpdir, f.filename)
+        job.start(tmpdir, f.filename, audio_path)
         threading.Thread(
             target=_run_job, args=(job, transcriber_factory, audio_path), daemon=True
         ).start()
@@ -264,7 +279,21 @@ def create_app(transcriber_factory=WhisperXTranscriber):
             return ("no transcript to name", 409)
         data = request.get_json(silent=True) or {}
         resolved = {spk: ((data.get(spk) or "").strip() or spk) for spk in job.samples}
-        job.set_done(apply_names(job.groups, resolved))
+        named_runs = [
+            {**g, "speaker": resolved.get(g["speaker"], g["speaker"])} for g in job.groups
+        ]
+        job.set_review(named_runs)
+        return ("", 200)
+
+    @app.route("/review", methods=["POST"])
+    def review():
+        if job.runs is None:
+            return ("not in review", 409)
+        speakers = (request.get_json(silent=True) or {}).get("speakers")
+        if not isinstance(speakers, list) or len(speakers) != len(job.runs):
+            return ("speakers length mismatch", 400)
+        runs = [{**r, "speaker": (s or r["speaker"])} for r, s in zip(job.runs, speakers)]
+        job.set_done(render_runs(runs))
         return ("", 200)
 
     @app.route("/result")

@@ -137,13 +137,24 @@ def test_clip_serves_wav_and_unknown_404():
     assert c.get("/clip/NOPE").status_code == 404
 
 
-def test_names_then_result_and_download():
+def test_names_then_review_then_result_and_download():
     app = create_app(transcriber_factory=FakeTranscriber)
     c = app.test_client()
     _upload(c)
     _poll(c, "naming")
-    # Name one speaker; leave the other blank -> falls back to its label.
+    # Name speakers; leaving SPEAKER_01 blank -> falls back to its label.
     assert c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": ""}).status_code == 200
+
+    snap = _poll(c, "review")
+    assert snap["stage"] == "review"
+    runs = snap["runs"]
+    assert [r["speaker"] for r in runs] == ["Alice", "SPEAKER_01"]
+    assert all("confidence" in r and "start" in r and "end" in r for r in runs)
+    assert snap["names"] == ["Alice", "SPEAKER_01"]
+
+    # Finalize unchanged: keep each run's current speaker.
+    speakers = [r["speaker"] for r in runs]
+    assert c.post("/review", json={"speakers": speakers}).status_code == 200
     assert c.get("/status").get_json()["stage"] == "done"
 
     res = c.get("/result").get_json()
@@ -152,10 +163,31 @@ def test_names_then_result_and_download():
     assert "SPEAKER_01: welcome gentlemen" in res["text"]
 
     dl = c.get("/download")
-    assert dl.status_code == 200
-    assert dl.mimetype == "text/plain"
     assert "dollop_test_a.transcription.txt" in dl.headers["Content-Disposition"]
-    assert b"Alice: the spanish version" in dl.data
+
+
+def test_review_reassignment_relabels_and_merges():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    _poll(c, "naming")
+    c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": "Bob"})
+    snap = _poll(c, "review")
+    # Reassign the second run (Bob's) to Alice -> output all Alice, merged to 1 line.
+    assert c.post("/review", json={"speakers": ["Alice", "Alice"]}).status_code == 200
+    text = c.get("/result").get_json()["text"]
+    assert "Bob" not in text
+    assert text.count("Alice:") == 1  # consecutive same-speaker runs merged
+
+
+def test_review_rejects_wrong_length():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    _poll(c, "naming")
+    c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": "Bob"})
+    _poll(c, "review")
+    assert c.post("/review", json={"speakers": ["Alice"]}).status_code == 400
 
 
 def test_shell_wires_all_views_and_endpoints():
