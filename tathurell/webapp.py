@@ -273,6 +273,15 @@ def create_app(transcriber_factory=WhisperXTranscriber):
         return send_file(os.path.join(job.tmpdir, f"{speaker}.wav"),
                          mimetype="audio/wav")
 
+    @app.route("/span/<int:i>")
+    def span(i):
+        if not job.runs or i < 0 or i >= len(job.runs):
+            return ("unknown run", 404)
+        r = job.runs[i]
+        out = os.path.join(job.tmpdir, f"span_{i}.wav")
+        extract_clip(job.audio_path, r["start"], r["end"], out)
+        return send_file(out, mimetype="audio/wav")
+
     @app.route("/names", methods=["POST"])
     def names():
         if job.groups is None or not job.samples:

@@ -203,6 +203,19 @@ def test_shell_wires_all_views_and_endpoints():
         assert ep in html
 
 
+def test_span_serves_run_audio_and_404():
+    app = create_app(transcriber_factory=FakeTranscriber)
+    c = app.test_client()
+    _upload(c)
+    _poll(c, "naming")
+    c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": "Bob"})
+    _poll(c, "review")
+    r = c.get("/span/0")
+    assert r.status_code == 200
+    assert r.mimetype == "audio/wav"
+    assert c.get("/span/99").status_code == 404
+
+
 @pytest.mark.skipif(
     not os.environ.get("TATHURELL_E2E"),
     reason="slow real-model run (~2-3 min); set TATHURELL_E2E=1 to enable. "
