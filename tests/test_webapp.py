@@ -175,7 +175,7 @@ def test_review_reassignment_relabels_and_merges():
     _upload(c)
     _poll(c, "naming")
     c.post("/names", json={"SPEAKER_00": "Alice", "SPEAKER_01": "Bob"})
-    snap = _poll(c, "review")
+    _poll(c, "review")
     # Reassign the second run (Bob's) to Alice -> output all Alice, merged to 1 line.
     assert c.post("/review", json={"speakers": ["Alice", "Alice"]}).status_code == 200
     text = c.get("/result").get_json()["text"]
