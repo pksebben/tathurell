@@ -9,7 +9,13 @@ all verified during the bake-off and required for correctness:
     tokens alignment could not pin -> skip those.
 """
 import os
-from pathlib import Path
+
+# Run fully offline from the local Hugging Face cache. The gated pyannote and
+# whisper models are already downloaded, so no live HF token or network call is
+# needed. setdefault lets a user opt back online (HF_HUB_OFFLINE=0) to fetch new
+# models; this must run before whisperx/huggingface_hub is imported.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 import whisperx
 
@@ -21,39 +27,16 @@ except ImportError:
 from tathurell.ffmpeg import ensure_ffmpeg_on_path
 from tathurell.realign import realign_speakers
 
-# Convenience fallback, resolved against the CURRENT WORKING DIRECTORY — so it
-# only finds the file when the tool is run from the repo root. $HF_TOKEN works
-# from anywhere and is the primary source.
-DEFAULT_TOKEN_FILE = "eval/data/.hf_token"
-
-
-def resolve_hf_token(token_file: str = DEFAULT_TOKEN_FILE) -> str:
-    """HF token from $HF_TOKEN, else from token_file, else exit with guidance."""
-    tok = os.environ.get("HF_TOKEN")
-    if tok:
-        return tok
-    p = Path(token_file)
-    if p.exists():
-        tok = p.read_text().strip()
-        if tok:
-            return tok
-    raise SystemExit(
-        "HF_TOKEN is not set. Create a token at https://huggingface.co/settings/tokens, "
-        "accept the gates for pyannote/speaker-diarization-3.1, pyannote/segmentation-3.0, "
-        "and pyannote/speaker-diarization-community-1, then either export HF_TOKEN=... or "
-        f"write it to {token_file}."
-    )
-
 
 class WhisperXTranscriber:
     """Load WhisperX (large-v3, CPU) + pyannote diarization once; transcribe to words."""
 
-    def __init__(self, model="large-v3", device="cpu", compute_type="int8", token=None):
+    def __init__(self, model="large-v3", device="cpu", compute_type="int8"):
         self._device = device
         self._model = whisperx.load_model(model, device, compute_type=compute_type)
-        self._diarize = DiarizationPipeline(
-            token=token if token is not None else resolve_hf_token(), device=device
-        )
+        # token=None: the gated models load from the local cache (offline mode
+        # is set at import), so no HF token is required.
+        self._diarize = DiarizationPipeline(token=None, device=device)
 
     def transcribe(self, audio_path: str, progress=None) -> list:
         """Return [{"word", "start", "end", "speaker"}] for the audio file.

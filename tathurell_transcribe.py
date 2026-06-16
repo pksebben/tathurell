@@ -8,7 +8,7 @@ import argparse
 import sys
 
 from tathurell.naming import apply_names, group_by_speaker
-from tathurell.whisperx_core import WhisperXTranscriber, resolve_hf_token
+from tathurell.whisperx_core import WhisperXTranscriber
 
 
 def prompt_names(groups):
@@ -52,8 +52,7 @@ def main(argv=None):
                     help="skip the browser naming modal; name speakers via terminal prompts")
     args = ap.parse_args(argv)
 
-    token = resolve_hf_token()  # clean early exit before loading models if missing
-    words = WhisperXTranscriber(model=args.model, token=token).transcribe(args.audio_path)
+    words = WhisperXTranscriber(model=args.model).transcribe(args.audio_path)
     if not words:
         print("[tathurell] WARNING: no words transcribed.", file=sys.stderr)
 

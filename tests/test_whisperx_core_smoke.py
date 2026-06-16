@@ -13,7 +13,11 @@ def test_transcribe_accepts_progress_param():
     assert sig.parameters["progress"].default is None
 
 
-@pytest.mark.skipif("HF_TOKEN" not in os.environ, reason="needs HF_TOKEN (pyannote)")
+@pytest.mark.skipif(
+    not os.environ.get("TATHURELL_E2E"),
+    reason="slow real-model run (~2-3 min); set TATHURELL_E2E=1 to enable. "
+    "Runs offline from the local HF cache -- no token needed.",
+)
 def test_transcriber_runs_on_clip_and_reports_progress():
     stages = []
     words = WhisperXTranscriber().transcribe("dollop_test_a.mp3", progress=stages.append)
