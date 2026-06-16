@@ -236,6 +236,15 @@ def test_real_pipeline_through_webapp():
     # Name the first speaker, leave the rest to fall back to their labels.
     names = {s["id"]: ("Alice" if i == 0 else "") for i, s in enumerate(snap["speakers"])}
     assert c.post("/names", json=names).status_code == 200
+    snap = _poll(c, "review", tries=600, delay=1.0)
+    assert snap["stage"] == "review"
+    runs = snap["runs"]
+    assert len(runs) >= 1
+    assert all(0.0 <= r["confidence"] <= 1.0 for r in runs)
+    # Reassign the first run to a fixed name, keep the rest, finalize.
+    speakers = [r["speaker"] for r in runs]
+    speakers[0] = "Alice"
+    assert c.post("/review", json={"speakers": speakers}).status_code == 200
     res = c.get("/result").get_json()
     assert res["filename"] == "dollop_test_a.transcription.txt"
     assert "Alice:" in res["text"]
