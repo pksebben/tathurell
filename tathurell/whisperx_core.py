@@ -24,6 +24,7 @@ try:
 except ImportError:
     from whisperx.diarize import DiarizationPipeline
 
+from tathurell.confidence import word_confidences
 from tathurell.ffmpeg import ensure_ffmpeg_on_path
 from tathurell.realign import realign_speakers
 
@@ -77,4 +78,10 @@ class WhisperXTranscriber:
                 })
         # whisperx assigns each word independently, so a single word at a turn
         # boundary can flip speaker mid-sentence. Realign per sentence by majority.
-        return realign_speakers(words)
+        words = realign_speakers(words)
+        # Attach per-word diarization confidence (overlap dominance of the final
+        # speaker) so the UI can flag uncertain runs.
+        diar_segments = list(zip(diar["start"], diar["end"], diar["speaker"]))
+        for w, c in zip(words, word_confidences(words, diar_segments)):
+            w["confidence"] = c
+        return words

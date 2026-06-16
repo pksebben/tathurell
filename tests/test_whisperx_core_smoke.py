@@ -25,3 +25,5 @@ def test_transcriber_runs_on_clip_and_reports_progress():
     assert all({"word", "start", "end", "speaker"} <= set(w) for w in words)
     # Coarse stages fire in order (each at most once, monotonic through the pipeline).
     assert stages == ["transcribing", "aligning", "diarizing", "finishing"]
+    # Every word carries a diarization confidence in [0, 1].
+    assert all(0.0 <= w["confidence"] <= 1.0 for w in words)
