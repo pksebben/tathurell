@@ -225,16 +225,18 @@ function renderReview(runs,names){
   var box=el("runs"); box.innerHTML="";
   runs.forEach(function(r){
     var d=document.createElement("div"); d.className="run"; d.dataset.conf=r.confidence;
-    var opts=names.map(function(nm){
-      return '<option'+(nm===r.speaker?' selected':'')+'>'+nm+'</option>';}).join("");
-    d.innerHTML='<select data-i="'+r.i+'">'+opts+'</select> '+
-      '<button data-span="'+r.i+'">▶</button> '+
-      '<span class="rtext"></span>';
-    d.querySelector(".rtext").textContent=r.text;
+    var sel=document.createElement("select"); sel.dataset.i=r.i;
+    names.forEach(function(nm){
+      var o=document.createElement("option"); o.value=nm; o.textContent=nm;
+      if(nm===r.speaker)o.selected=true; sel.appendChild(o);});
+    var play=document.createElement("button"); play.textContent="▶"; play.dataset.span=r.i;
+    var txt=document.createElement("span"); txt.className="rtext"; txt.textContent=r.text;
+    d.appendChild(sel); d.appendChild(document.createTextNode(" "));
+    d.appendChild(play); d.appendChild(document.createTextNode(" ")); d.appendChild(txt);
     box.appendChild(d);
   });
   box.querySelectorAll("button[data-span]").forEach(function(b){
-    b.onclick=function(){new Audio("/span/"+b.dataset.span).play();};});
+    b.onclick=function(){new Audio("/span/"+b.dataset.span).play().catch(function(){});};});
   tint();
 }
 el("conf-slider").oninput=tint;
