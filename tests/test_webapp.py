@@ -195,12 +195,11 @@ def test_review_rejects_wrong_length():
 
 def test_shell_wires_all_views_and_endpoints():
     html = create_app().test_client().get("/").get_data(as_text=True)
-    # The four views the JS swaps between:
-    for view in ("view-upload", "view-working", "view-naming", "view-result"):
+    for view in ("view-upload", "view-working", "view-naming", "view-review", "view-result"):
         assert f'id="{view}"' in html
-    # The JS talks to every endpoint:
-    for ep in ("/upload", "/status", "/names", "/result", "/download", "/reset", "/clip/"):
+    for ep in ("/upload", "/status", "/names", "/review", "/span/", "/result", "/download", "/reset", "/clip/"):
         assert ep in html
+    assert 'id="conf-slider"' in html
 
 
 def test_span_serves_run_audio_and_404():

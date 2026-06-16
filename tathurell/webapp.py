@@ -135,6 +135,16 @@ pre{white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:1rem;max-h
   <button id="save">Save names</button>
 </div>
 
+<div id="view-review" class="hidden">
+  <h3>Review who said what</h3>
+  <p class="txt">Uncertain spans are highlighted. Drag to flag more or fewer; click ▶ to listen,
+     and change a speaker if it's wrong.</p>
+  <label>confidence <input type="range" id="conf-slider" min="0" max="100" value="40"></label>
+  <span id="flag-count"></span>
+  <div id="runs"></div>
+  <button id="review-save">Looks good</button>
+</div>
+
 <div id="view-result" class="hidden">
   <h3>Transcript</h3>
   <pre id="preview"></pre>
@@ -145,7 +155,7 @@ pre{white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:1rem;max-h
 <script>
 var LABELS={transcribing:"Transcribing…",aligning:"Aligning words…",
   diarizing:"Identifying speakers…",finishing:"Finishing…"};
-var views=["upload","working","naming","result"];
+var views=["upload","working","naming","review","result"];
 function show(v){views.forEach(function(n){
   document.getElementById("view-"+n).classList.toggle("hidden",n!==v);});}
 function el(id){return document.getElementById(id);}
@@ -166,6 +176,7 @@ function poll(){
     if(["transcribing","aligning","diarizing","finishing"].indexOf(s.stage)>=0){
       el("stage").textContent=LABELS[s.stage]; show("working"); setTimeout(poll,1000);return;}
     if(s.stage==="naming"){renderNaming(s.speakers); show("naming");return;}
+    if(s.stage==="review"){renderReview(s.runs, s.names); show("review");return;}
     if(s.stage==="done"){loadResult();return;}
     setTimeout(poll,1000);  // unknown/transient stage: keep polling rather than freeze
   }).catch(function(){setTimeout(poll,1000);});  // transient /status failure: retry
@@ -187,7 +198,7 @@ el("save").onclick=function(){
   el("names").querySelectorAll("input").forEach(function(i){names[i.dataset.id]=i.value;});
   fetch("/names",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(names)}).then(function(r){
-      if(r.ok){loadResult();} else {r.text().then(function(t){alert(t);});}});
+      if(r.ok){poll();} else {r.text().then(function(t){alert(t);});}});
 };
 
 function loadResult(){
@@ -200,6 +211,40 @@ function loadResult(){
 function restart(){fetch("/reset",{method:"POST"}).then(function(){
   el("file").value=""; show("upload");});}
 el("restart").onclick=restart; el("working-reset").onclick=restart;
+
+var REVIEW={runs:[],names:[]};
+function tint(){
+  var thr=parseInt(el("conf-slider").value,10)/100, n=0;
+  el("runs").querySelectorAll(".run").forEach(function(d){
+    var low=parseFloat(d.dataset.conf)<thr;
+    d.style.background=low?"#fff3cd":""; if(low)n++;});
+  el("flag-count").textContent="highlighting "+n+" of "+REVIEW.runs.length+" runs";
+}
+function renderReview(runs,names){
+  REVIEW.runs=runs; REVIEW.names=names;
+  var box=el("runs"); box.innerHTML="";
+  runs.forEach(function(r){
+    var d=document.createElement("div"); d.className="run"; d.dataset.conf=r.confidence;
+    var opts=names.map(function(nm){
+      return '<option'+(nm===r.speaker?' selected':'')+'>'+nm+'</option>';}).join("");
+    d.innerHTML='<select data-i="'+r.i+'">'+opts+'</select> '+
+      '<button data-span="'+r.i+'">▶</button> '+
+      '<span class="rtext"></span>';
+    d.querySelector(".rtext").textContent=r.text;
+    box.appendChild(d);
+  });
+  box.querySelectorAll("button[data-span]").forEach(function(b){
+    b.onclick=function(){new Audio("/span/"+b.dataset.span).play();};});
+  tint();
+}
+el("conf-slider").oninput=tint;
+el("review-save").onclick=function(){
+  var sel=el("runs").querySelectorAll("select"), speakers=[];
+  sel.forEach(function(s){speakers[parseInt(s.dataset.i,10)]=s.value;});
+  fetch("/review",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({speakers:speakers})}).then(function(r){
+      if(r.ok){loadResult();} else {r.text().then(function(t){alert(t);});}});
+};
 
 show("upload");
 </script></body></html>"""
