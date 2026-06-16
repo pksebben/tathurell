@@ -1,4 +1,7 @@
+import os
 import time
+
+import pytest
 
 from tathurell.webapp import Job, create_app
 
@@ -163,3 +166,30 @@ def test_shell_wires_all_views_and_endpoints():
     # The JS talks to every endpoint:
     for ep in ("/upload", "/status", "/names", "/result", "/download", "/reset", "/clip/"):
         assert ep in html
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TATHURELL_E2E"),
+    reason="slow real-model run (~2-3 min); set TATHURELL_E2E=1 to enable. "
+    "Drives the REAL WhisperX pipeline through the webapp; runs offline (no token).",
+)
+def test_real_pipeline_through_webapp():
+    # End-to-end with the DEFAULT (real) WhisperXTranscriber: proves the actual
+    # models flow through upload -> background job -> naming -> named transcript,
+    # the one integration the fake transcriber cannot cover.
+    app = create_app()  # real WhisperXTranscriber
+    c = app.test_client()
+    assert _upload(c).status_code == 202
+    snap = _poll(c, "naming", tries=600, delay=1.0)  # up to ~10 min for the real run
+    assert snap["stage"] == "naming"
+    assert len(snap["speakers"]) >= 1
+    # A real clip must be served and playable for at least the first speaker.
+    first = snap["speakers"][0]["id"]
+    assert c.get(f"/clip/{first}").status_code == 200
+    # Name the first speaker, leave the rest to fall back to their labels.
+    names = {s["id"]: ("Alice" if i == 0 else "") for i, s in enumerate(snap["speakers"])}
+    assert c.post("/names", json=names).status_code == 200
+    res = c.get("/result").get_json()
+    assert res["filename"] == "dollop_test_a.transcription.txt"
+    assert "Alice:" in res["text"]
+    assert len(res["text"]) > 100
