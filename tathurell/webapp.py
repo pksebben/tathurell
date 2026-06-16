@@ -15,7 +15,7 @@ import webbrowser
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.serving import make_server
 
-from tathurell.naming import apply_names, group_by_speaker, render_runs
+from tathurell.naming import group_by_speaker, render_runs
 from tathurell.sampling import extract_clip, pick_speaker_samples
 from tathurell.whisperx_core import WhisperXTranscriber
 

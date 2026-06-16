@@ -163,7 +163,10 @@ def test_names_then_review_then_result_and_download():
     assert "SPEAKER_01: welcome gentlemen" in res["text"]
 
     dl = c.get("/download")
+    assert dl.status_code == 200
+    assert dl.mimetype == "text/plain"
     assert "dollop_test_a.transcription.txt" in dl.headers["Content-Disposition"]
+    assert b"Alice: the spanish version" in dl.data
 
 
 def test_review_reassignment_relabels_and_merges():
